@@ -1,0 +1,57 @@
+outputs:
+  default:
+    type: elasticsearch
+    hosts: ["http://elasticsearch.orb.local:9200"]
+
+agent.logging:
+  level: info
+  to_stderr: false
+  metrics.enabled: true
+
+inputs:
+  - id: falco-logs
+    type: filestream
+    use_output: default
+    streams:
+      - id: falco-events
+        paths:
+          - /var/log/falco/falco_events.log
+        parsers:
+          - ndjson:
+              target: ""
+              add_error_key: true
+        data_stream:
+          dataset: falco
+
+  - id: zeek-logs
+    type: filestream
+    use_output: default
+    streams:
+      - id: zeek-conn-log
+        paths:
+          - /var/log/zeek/current/*.log
+        data_stream:
+          dataset: zeek
+
+  - id: docker-metrics
+    type: docker/metrics
+    use_output: default
+    streams:
+      - id: docker-cpu
+        data_stream:
+          dataset: docker.cpu
+        metricsets: [cpu]
+        hosts: ["unix:///var/run/docker.sock"]
+        period: 10s
+      - id: docker-memory
+        data_stream:
+          dataset: docker.memory
+        metricsets: [memory]
+        hosts: ["unix:///var/run/docker.sock"]
+        period: 10s
+      - id: docker-network
+        data_stream:
+          dataset: docker.network
+        metricsets: [network]
+        hosts: ["unix:///var/run/docker.sock"]
+        period: 10s

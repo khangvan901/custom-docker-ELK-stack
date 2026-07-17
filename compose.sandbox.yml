@@ -1,0 +1,65 @@
+services:
+  elastic-agent:
+    image: docker.elastic.co/elastic-agent/elastic-agent:8.15.0
+    container_name: elastic-agent
+    user: root
+    networks: [malware-net, egress-net]
+    volumes:
+      - ./elastic-agent.yml:/usr/share/elastic-agent/elastic-agent.yml
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - falco-logs:/var/log/falco:ro
+      - zeek-logs:/var/log/zeek:ro
+
+  malware-sandbox:
+    build:
+      context: .
+      dockerfile: Dockerfile.malware-sandbox
+    image: malware-sandbox-custom
+    container_name: malware-sandbox
+    networks: [malware-net]
+    command: sleep infinity
+    tty: true
+    stdin_open: true
+    cap_drop: [ALL]
+    cap_add: [NET_RAW]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs: ["/tmp", "/run"]
+
+  falco:
+    image: falcosecurity/falco:0.43.0
+    container_name: falco
+    privileged: true
+    networks: [malware-net]
+    pid: "host"
+    depends_on: [malware-sandbox]
+    volumes:
+      - /sys/kernel/tracing:/sys/kernel/tracing:ro
+      - /var/run/docker.sock:/host/var/run/docker.sock
+      - /proc:/host/proc:ro
+      - /etc:/host/etc:ro
+      - falco-logs:/var/log/falco
+      - ./falco.yml:/etc/falco/falco.yaml
+    entrypoint: ["/usr/bin/falco"]
+    command: ["-o", "engine.kind=modern_ebpf"]
+
+  zeek:
+    image: zeek/zeek:latest
+    container_name: zeek
+    network_mode: "service:malware-sandbox"
+    depends_on: [malware-sandbox]
+    cap_add: [NET_ADMIN, NET_RAW]
+    volumes:
+      - zeek-logs:/usr/local/zeek/logs
+    command: zeek -i eth0 local
+
+networks:
+  malware-net:
+    driver: bridge
+    internal: true
+  egress-net:
+    driver: bridge
+
+volumes:
+  falco-logs:
+  zeek-logs:

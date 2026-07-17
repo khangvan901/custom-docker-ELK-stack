@@ -1,0 +1,22 @@
+services:
+  elasticsearch:
+    image: docker-elk-elasticsearch:latest
+    container_name: elasticsearch
+    networks: [elk-net]
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+    ports: ["9200:9200"]
+
+  kibana:
+    image: docker-elk-kibana:latest
+    container_name: kibana
+    networks: [elk-net]
+    depends_on: [elasticsearch]
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports: ["5601:5601"]
+
+networks:
+  elk-net:
+    driver: bridge

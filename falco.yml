@@ -1,0 +1,50 @@
+engine:
+  kind: modern_ebpf
+  modern_ebpf:
+    cpus_for_each_buffer: 2
+
+json_output: true
+json_include_output_property: true
+
+plugins:
+  - name: container
+    library_path: libcontainer.so
+    init_config: ""
+
+load_plugins: [container]
+
+file_output:
+  enabled: true
+  keep_alive: true
+  filename: /var/log/falco/falco_events.log
+stdout_output:
+  enabled: true
+
+rules_file:
+  - /etc/falco/falco_rules.yaml
+
+syscall_event_drops:
+  actions:
+    - log
+  rate: 0.03333
+  max_burst: 1
+
+base_syscalls:
+  custom_set:
+    - open
+    - openat
+    - execve
+    - execveat
+    - connect
+    - accept
+    - accept4
+    - clone
+    - fork
+    - unlink
+    - unlinkat
+    - rename
+    - renameat
+    - chmod
+    - fchmod
+    - setuid
+    - setgid
