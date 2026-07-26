@@ -1,0 +1,27 @@
+{
+  "description": "Parse Falco JSON (message) and normalize key fields to ECS so Sigma rules (product: linux) resolve against logs-falco-*.",
+  "processors": [
+    {
+      "json": {
+        "field": "message",
+        "target_field": "falco",
+        "if": "ctx.message != null && ctx.message.trim().startsWith('{')",
+        "on_failure": [
+          { "append": { "field": "tags", "value": "falco_json_parse_failed" } }
+        ]
+      }
+    },
+    {
+      "script": {
+        "lang": "painless",
+        "if": "ctx.falco != null && ctx.falco.output_fields != null",
+        "source": "def of = ctx.falco.output_fields; Map proc = ctx.process instanceof Map ? ctx.process : new HashMap(); if (of.containsKey('proc.cmdline')) proc.command_line = of.get('proc.cmdline'); if (of.containsKey('proc.exepath')) proc.executable = of.get('proc.exepath'); else if (of.containsKey('proc.exe')) proc.executable = of.get('proc.exe'); if (of.containsKey('proc.name')) proc.name = of.get('proc.name'); if (of.containsKey('proc.pid')) proc.pid = of.get('proc.pid'); if (of.containsKey('proc.pname')) { Map par = proc.parent instanceof Map ? proc.parent : new HashMap(); par.name = of.get('proc.pname'); proc.parent = par; } if (of.containsKey('proc.cwd')) proc.working_directory = of.get('proc.cwd'); if (!proc.isEmpty()) ctx.process = proc; if (of.containsKey('user.name')) { Map u = ctx.user instanceof Map ? ctx.user : new HashMap(); u.name = of.get('user.name'); ctx.user = u; } if (of.containsKey('container.id')) { Map c = ctx.container instanceof Map ? ctx.container : new HashMap(); c.id = of.get('container.id'); ctx.container = c; } if (of.containsKey('fd.name')) { Map f = ctx.file instanceof Map ? ctx.file : new HashMap(); f.path = of.get('fd.name'); ctx.file = f; } Map ev = ctx.event instanceof Map ? ctx.event : new HashMap(); if (of.containsKey('evt.type')) ev.action = of.get('evt.type'); if (ctx.falco.source == 'syscall') ev.category = ['process']; ev.module = 'falco'; ev.kind = 'event'; ctx.event = ev;"
+      }
+    },
+    { "rename": { "field": "falco.rule", "target_field": "rule.name", "ignore_missing": true } },
+    { "set": { "field": "event.dataset", "value": "falco", "override": false } }
+  ],
+  "on_failure": [
+    { "set": { "field": "error.message", "value": "{{{ _ingest.on_failure_message }}}" } }
+  ]
+}

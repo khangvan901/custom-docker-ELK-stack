@@ -1,0 +1,25 @@
+title: Fileless Execution Via memfd
+id: 5c1b2d7e-0e9a-4f3b-9b1a-8c2f1e4a7d90
+status: experimental
+description: |
+  Detects a process executing from an anonymous in-memory (memfd) file. Malware
+  uses memfd_create + execveat to run payloads that never touch disk (fileless
+  execution / defense evasion). Validated in the OrbStack-ELK sandbox against
+  Falco syscall telemetry normalized to ECS.
+references:
+  - https://attack.mitre.org/techniques/T1620/
+author: your-name
+date: 2026-07-26
+tags:
+  - attack.defense-evasion
+  - attack.t1620
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    Image|startswith: 'memfd:'
+  condition: selection
+falsepositives:
+  - Some language runtimes / JIT engines legitimately execute from memfd.
+level: high

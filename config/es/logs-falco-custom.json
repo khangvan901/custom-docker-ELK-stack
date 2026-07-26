@@ -1,0 +1,12 @@
+{
+  "template": {
+    "settings": {
+      "index": {
+        "default_pipeline": "falco-ecs"
+      }
+    }
+  },
+  "_meta": {
+    "description": "Attaches the falco-ecs ingest pipeline to the logs-falco data stream."
+  }
+}

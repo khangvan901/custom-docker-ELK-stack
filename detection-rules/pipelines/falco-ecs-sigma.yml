@@ -1,0 +1,31 @@
+# pySigma processing pipeline: maps Sigma's generic Linux field names to the ECS
+# fields produced by config/es/falco-ecs-pipeline.json (and the Zeek/FIM ECS
+# fields). Used by sigma-cli when converting rules for this lab.
+#
+#   sigma convert -t elasticsearch -f lucene \
+#     -p detection-rules/pipelines/falco-ecs-sigma.yml <rule.yml>
+name: falco-ecs-sigma
+priority: 100
+transformations:
+  - id: process_creation_field_mapping
+    type: field_name_mapping
+    mapping:
+      Image: process.executable
+      OriginalFileName: process.executable
+      CommandLine: process.command_line
+      ParentImage: process.parent.executable
+      ParentCommandLine: process.parent.command_line
+      CurrentDirectory: process.working_directory
+      User: user.name
+      # network_connection
+      DestinationIp: destination.ip
+      DestinationPort: destination.port
+      DestinationHostname: destination.domain
+      SourceIp: source.ip
+      SourcePort: source.port
+      # file_event
+      TargetFilename: file.path
+      Filename: file.path
+    rule_conditions:
+      - type: logsource
+        product: linux

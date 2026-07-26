@@ -1,0 +1,108 @@
+name: sigma-ci
+
+# lint + convert run on GitHub-hosted runners for every rule change.
+# validate needs the live lab, so it runs manually on a self-hosted runner
+# that can reach Elasticsearch.
+on:
+  pull_request:
+    paths:
+      - 'detection-rules/**'
+      - '.github/workflows/sigma-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'detection-rules/**'
+  workflow_dispatch:
+    inputs:
+      tp_window_minutes:
+        description: 'True-positive lookback window (minutes) for validate'
+        default: '30'
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install --upgrade pip sigma-cli
+      - run: sigma check detection-rules/sigma/
+
+  convert:
+    runs-on: ubuntu-latest
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [elasticsearch]   # add splunk, opensearch, etc. to fan out
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install sigma-cli + backend
+        run: |
+          python -m pip install --upgrade pip sigma-cli
+          sigma plugin install ${{ matrix.backend }}
+      - name: Convert all rules
+        run: |
+          set -euo pipefail
+          mkdir -p converted
+          failed=0
+          for rule in detection-rules/sigma/*.yml; do
+            out="converted/$(basename "${rule%.yml}").${{ matrix.backend }}.txt"
+            if sigma convert -t "${{ matrix.backend }}" -f lucene \
+                 -p detection-rules/pipelines/falco-ecs-sigma.yml \
+                 "$rule" | tee "$out"; then
+              echo "ok: $rule"
+            else
+              echo "::error file=$rule::conversion failed"
+              failed=1
+            fi
+          done
+          exit "$failed"
+      - name: Upload converted queries
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: converted-${{ matrix.backend }}
+          path: converted/
+          if-no-files-found: ignore
+
+  # Behavioural check against the live lab. Needs a self-hosted runner labelled
+  # orbstack-elk plus ELASTIC_PASSWORD / ES_PORT secrets. Manual trigger only.
+  validate:
+    runs-on: [self-hosted, orbstack-elk]
+    needs: convert
+    if: github.event_name == 'workflow_dispatch'
+    env:
+      ES_PORT: ${{ secrets.ES_PORT }}
+      ELASTIC_PASSWORD: ${{ secrets.ELASTIC_PASSWORD }}
+      TP_WINDOW: ${{ github.event.inputs.tp_window_minutes }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install sigma-cli + elasticsearch backend
+        run: |
+          python -m pip install --upgrade pip sigma-cli
+          sigma plugin install elasticsearch
+      - name: Recreate .env from secrets
+        run: printf 'ES_PORT=%s\nELASTIC_PASSWORD=%s\n' "$ES_PORT" "$ELASTIC_PASSWORD" > .env
+      - name: Validate rules against the live lab
+        run: |
+          set -euo pipefail
+          chmod +x detection-rules/validate.sh
+          rc=0
+          for rule in detection-rules/sigma/*.yml; do
+            detection-rules/validate.sh "$rule" "${TP_WINDOW:-30}" || rc=1
+          done
+          exit "$rc"
